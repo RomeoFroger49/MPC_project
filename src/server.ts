@@ -190,5 +190,6 @@ app.get(["/favicon.ico", "/favicon.png", "/favicon.svg"], (_req, res) => {
   res.status(204).end(); // No Content
 });
 
-const PORT = process.env.PORT ?? 3000;
+const PORT = Number(process.env.PORT) || 3000;
 app.listen(PORT, () => logger.info(`MCP server listening on :${PORT}`));
+
