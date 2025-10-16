@@ -2,8 +2,13 @@ import "dotenv/config";
 import express from "express";
 import { sendMessageTool } from "./mcp/tools";
 import { logger } from "./utils/logger";
+import { expressjwt as jwt } from "express-jwt";
+import jwksRsa from "jwks-rsa";
 
 const app = express();
+
+const audience = "https://mcp.romeofroger.com";
+const issuer = `https://YOUR_TENANT.eu.auth0.com/`;
 
 // --- body parser en premier (important) ---
 app.use(express.json({ limit: "1mb" }));
@@ -21,6 +26,22 @@ app.use((req, _res, next) => {
   } catch {}
   next();
 });
+
+app.use(
+  "/mcp",
+  jwt({
+    secret: jwksRsa.expressJwtSecret({
+      cache: true,
+      jwksUri: `${issuer}.well-known/jwks.json`,
+      rateLimit: true,
+      jwksRequestsPerMinute: 10,
+    }) as any,
+    algorithms: ["RS256"],
+    audience,
+    issuer,
+    credentialsRequired: true,
+  })
+);
 
 // --- Schéma des tools exposés ---
 const TOOLS_LIST = [
