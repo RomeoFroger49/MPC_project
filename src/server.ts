@@ -66,6 +66,15 @@ function rpcError(
   return { jsonrpc: "2.0", id, error: { code, message, data } };
 }
 
+app.use((req, _res, next) => {
+  let body = "";
+  req.on("data", (c) => (body += c.toString().slice(0, 200)));
+  req.on("end", () => {
+    console.log(`[REQ] ${req.method} ${req.path} -> body: ${body}`);
+    next();
+  });
+});
+
 // (2) Tolérer CORS/Préflight pour /mcp et /mcp/tools
 app.get("/", (_req, res) => {
   res.setHeader("Content-Type", "application/json");
