@@ -4,11 +4,14 @@ import { sendMessageTool } from "./mcp/tools";
 import { logger } from "./utils/logger";
 import { expressjwt as jwt } from "express-jwt";
 import jwksRsa from "jwks-rsa";
+import fetch from "node-fetch"; 
+import { URL, URLSearchParams } from "url";
 
 const app = express();
 
 const audience = "https://mcp.romeofroger.com";
-const issuer = `https://YOUR_TENANT.eu.auth0.com/`;
+const issuerBase = "https://dev-ar4cxth8ci8dynsr.us.auth0.com";
+const issuer = `${issuerBase}/`;
 
 // --- body parser en premier (important) ---
 app.use(express.json({ limit: "1mb" }));
@@ -120,6 +123,37 @@ app.get("/mcp", (_req, res) => {
   res.type("application/json").status(200).json(mcpDiscovery());
 });
 
+app.get("/.well-known/oauth-authorization-server", (req, res) => {
+  res.json({
+    issuer: issuerBase + "/",
+    authorization_endpoint: `https://${req.headers.host}/oauth/authorize`,
+    token_endpoint: `https://${req.headers.host}/oauth/token`,
+  });
+});
+
+app.get("/.well-known/openid-configuration", (req, res) => {
+  res.json({
+    issuer: issuerBase + "/",
+    authorization_endpoint: `https://${req.headers.host}/oauth/authorize`,
+    token_endpoint: `https://${req.headers.host}/oauth/token`,
+    jwks_uri: `${issuerBase}/.well-known/jwks.json`,
+    response_types_supported: ["code"],
+    grant_types_supported: [
+      "authorization_code",
+      "client_credentials",
+      "refresh_token",
+    ],
+    subject_types_supported: ["public"],
+    id_token_signing_alg_values_supported: ["RS256"],
+  });
+});
+
+app.get("/oauth/authorize", (req, res) => {
+  const query = new URLSearchParams(req.query as any).toString();
+  const url = `${issuerBase}/authorize?${query}`;
+  res.redirect(302, url);
+});
+
 // --- Liste des tools (GET facultatif) ---
 app.get("/mcp/tools", (_req, res) => {
   res.setHeader("Content-Type", "application/json");
@@ -195,6 +229,28 @@ app.post("/mcp", async (req, res) => {
 // --- Favicon : éviter les 404 bruitées ---
 app.get(["/favicon.ico", "/favicon.png", "/favicon.svg"], (_req, res) =>
   res.status(204).end()
+);
+
+app.post(
+  "/oauth/token",
+  express.urlencoded({ extended: false }),
+  async (req, res) => {
+    try {
+      const body = new URLSearchParams(req.body as any);
+      const r = await fetch(`${issuerBase}/oauth/token`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body,
+      } as any);
+      const text = await r.text();
+      res
+        .status(r.status)
+        .type(r.headers.get("content-type") || "application/json")
+        .send(text);
+    } catch (e: any) {
+      res.status(502).json({ error: "oauth_proxy_error", details: e?.message });
+    }
+  }
 );
 
 // --- Listen ---
