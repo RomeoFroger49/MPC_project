@@ -1,0 +1,38 @@
+{
+  "name": "mpc_project",
+  "version": "1.0.0",
+  "description": "test",
+  "main": "server.ts",
+  "scripts": {
+    "dev": "ts-node src/server.ts",
+    "build": "tsc -p .",
+    "start": "node dist/server.js",
+    "get:token": "ts-node src/scripts/get-refresh-token.ts",
+    "get:token:loopback": "ts-node src/scripts/get-refresh-token-loopback.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RomeoFroger49/MPC_project.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/RomeoFroger49/MPC_project/issues"
+  },
+  "homepage": "https://github.com/RomeoFroger49/MPC_project#readme",
+  "dependencies": {
+    "@types/node": "^24.7.2",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "googleapis": "^163.0.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/dotenv": "^6.1.1",
+    "@types/express": "^5.0.3"
+  }
+}
