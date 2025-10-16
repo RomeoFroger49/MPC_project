@@ -75,6 +75,10 @@ app.use((req, _res, next) => {
   });
 });
 
+app.post("/mcp", (req, res) => {
+  res.status(200).json({ ok: true, echo: req.body ?? null });
+});
+
 // (2) Tolérer CORS/Préflight pour /mcp et /mcp/tools
 app.get("/", (_req, res) => {
   res.setHeader("Content-Type", "application/json");
@@ -117,7 +121,7 @@ app.get("/mcp/tools", (_req, res) => {
   });
 });
 
-app.post("/mcp", async (req, res) => {
+/*app.post("/mcp", async (req, res) => {
   const body = req.body as JsonRpcReq | JsonRpcReq[];
   const handle = async (m: JsonRpcReq): Promise<JsonRpcRes> => {
     // garde-fous JSON-RPC de base
@@ -188,7 +192,7 @@ app.post("/mcp", async (req, res) => {
 
 app.get(["/favicon.ico", "/favicon.png", "/favicon.svg"], (_req, res) => {
   res.status(204).end(); // No Content
-});
+});*/
 
 const PORT = Number(process.env.PORT) || 3000;
 app.listen(PORT, () => logger.info(`MCP server listening on :${PORT}`));
