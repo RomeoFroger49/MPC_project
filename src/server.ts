@@ -93,17 +93,10 @@ app.head("/mcp/tools", (_req, res) => res.sendStatus(200));
 
 // --- Découverte (utile pour debug/navigateurs) ---
 app.get("/", (_req, res) => {
-  res.setHeader("Content-Type", "application/json");
-  res.status(200).json(mcpDiscovery());
+  res.type("application/json").status(200).json(mcpDiscovery());
 });
 app.get("/mcp", (_req, res) => {
-  res.setHeader("Content-Type", "application/json");
-  res.status(200).json(mcpDiscovery());
-});
-app.post("/mcp", (_req, res) => {
-  // certains clients POST /mcp lors du handshake non-RPC ; renvoyer découverte ne gêne pas
-  res.setHeader("Content-Type", "application/json");
-  res.status(200).json({ ok: true, ...mcpDiscovery() });
+  res.type("application/json").status(200).json(mcpDiscovery());
 });
 
 // --- Liste des tools (GET facultatif) ---
@@ -122,17 +115,16 @@ app.post("/mcp", async (req, res) => {
     }
     try {
       switch (m.method) {
-        case "initialize": {
-          const result = {
+        case "initialize":
+          return rpcResult(m.id ?? null, {
             protocolVersion: "2024-11-05",
             serverInfo: { name: "Romeo MCP Server", version: "0.1.0" },
             capabilities: { tools: { list: true, call: true } },
-          };
-          return rpcResult(m.id ?? null, result);
-        }
-        case "tools/list": {
+          });
+
+        case "tools/list":
           return rpcResult(m.id ?? null, { tools: TOOLS_LIST });
-        }
+
         case "tools/call": {
           const { name, arguments: args } = m.params ?? {};
           if (name !== "send_message") {
@@ -147,6 +139,7 @@ app.post("/mcp", async (req, res) => {
             });
           }
         }
+
         default:
           return rpcError(
             m.id ?? null,
@@ -162,14 +155,13 @@ app.post("/mcp", async (req, res) => {
   };
 
   try {
-    const isBatch = Array.isArray(body);
-    const responses = isBatch
+    const responses = Array.isArray(body)
       ? await Promise.all(body.map(handle))
       : await handle(body);
-    res.setHeader("Content-Type", "application/json");
-    res.status(200).json(responses);
+    res.type("application/json").status(200).json(responses);
   } catch (e: any) {
     res
+      .type("application/json")
       .status(200)
       .json(
         rpcError((body as any)?.id ?? null, -32000, "Unhandled server error", {
