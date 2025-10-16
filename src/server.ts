@@ -1,13 +1,28 @@
 import "dotenv/config";
-
 import express from "express";
 import { sendMessageTool } from "./mcp/tools";
 import { logger } from "./utils/logger";
 
 const app = express();
+
+// --- body parser en premier (important) ---
 app.use(express.json({ limit: "1mb" }));
 
+// --- logger simple et non bloquant ---
+app.use((req, _res, next) => {
+  try {
+    const preview =
+      req.method === "POST" && req.body
+        ? JSON.stringify(req.body).slice(0, 300)
+        : "";
+    console.log(
+      `[REQ] ${req.method} ${req.path} ${preview && "body:"} ${preview}`
+    );
+  } catch {}
+  next();
+});
 
+// --- Schéma des tools exposés ---
 const TOOLS_LIST = [
   {
     name: "send_message",
@@ -30,6 +45,7 @@ const TOOLS_LIST = [
     },
   },
 ];
+
 function mcpDiscovery() {
   return {
     name: "Romeo MCP Server",
@@ -39,6 +55,7 @@ function mcpDiscovery() {
   };
 }
 
+// --- JSON-RPC 2.0 types/helpers ---
 type JsonRpcId = string | number | null;
 type JsonRpcReq = {
   jsonrpc: "2.0";
@@ -54,112 +71,75 @@ type JsonRpcRes =
       error: { code: number; message: string; data?: any };
     };
 
-function rpcResult(id: JsonRpcId, result: any): JsonRpcRes {
-  return { jsonrpc: "2.0", id, result };
-}
-function rpcError(
+const rpcResult = (id: JsonRpcId, result: any): JsonRpcRes => ({
+  jsonrpc: "2.0",
+  id,
+  result,
+});
+const rpcError = (
   id: JsonRpcId,
   code: number,
   message: string,
   data?: any
-): JsonRpcRes {
-  return { jsonrpc: "2.0", id, error: { code, message, data } };
-}
+): JsonRpcRes => ({ jsonrpc: "2.0", id, error: { code, message, data } });
 
-app.use((req, _res, next) => {
-  let body = "";
-  req.on("data", (c) => (body += c.toString().slice(0, 200)));
-  req.on("end", () => {
-    console.log(`[REQ] ${req.method} ${req.path} -> body: ${body}`);
-    next();
-  });
-});
+// --- Préflights & HEAD (ne bloquent pas) ---
+app.options("/", (_req, res) => res.sendStatus(204));
+app.options("/mcp", (_req, res) => res.sendStatus(204));
+app.options("/mcp/tools", (_req, res) => res.sendStatus(204));
+app.head("/", (_req, res) => res.sendStatus(200));
+app.head("/mcp", (_req, res) => res.sendStatus(200));
+app.head("/mcp/tools", (_req, res) => res.sendStatus(200));
 
-app.post("/mcp", (req, res) => {
-  res.status(200).json({ ok: true, echo: req.body ?? null });
-});
-
-// (2) Tolérer CORS/Préflight pour /mcp et /mcp/tools
+// --- Découverte (utile pour debug/navigateurs) ---
 app.get("/", (_req, res) => {
   res.setHeader("Content-Type", "application/json");
   res.status(200).json(mcpDiscovery());
 });
-app.post("/", (req, res) => {
+app.get("/mcp", (_req, res) => {
+  res.setHeader("Content-Type", "application/json");
+  res.status(200).json(mcpDiscovery());
+});
+app.post("/mcp", (_req, res) => {
+  // certains clients POST /mcp lors du handshake non-RPC ; renvoyer découverte ne gêne pas
   res.setHeader("Content-Type", "application/json");
   res.status(200).json({ ok: true, ...mcpDiscovery() });
 });
-app.head("/", (_req, res) => res.sendStatus(200));
-app.options("/", (_req, res) => res.sendStatus(204));
 
-// Endpoints MCP (gardés tels quels)
-
-
-// Liste des tools
+// --- Liste des tools (GET facultatif) ---
 app.get("/mcp/tools", (_req, res) => {
   res.setHeader("Content-Type", "application/json");
-  res.status(200).json({
-    tools: [{
-      name: "send_message",
-      description: "Send a message via the specified channel (gmail/whatsapp/teams)",
-      parameters: {
-        type: "object",
-        properties: {
-          channel: { type: "string", description: "gmail | whatsapp | teams" },
-          to: { type: "string", description: "Recipient (email, E.164 phone, or teams id)" },
-          content: {
-            type: "object",
-            properties: {
-              subject: { type: "string", description: "Email subject (gmail only)" },
-              text: { type: "string", description: "Message body" }
-            },
-            required: ["text"]
-          }
-        },
-        required: ["channel", "to", "content"]
-      }
-    }]
-  });
+  res.status(200).json({ tools: TOOLS_LIST });
 });
 
-/*app.post("/mcp", async (req, res) => {
+// --- POINT D’ENTRÉE MCP JSON-RPC ---
+app.post("/mcp", async (req, res) => {
   const body = req.body as JsonRpcReq | JsonRpcReq[];
+
   const handle = async (m: JsonRpcReq): Promise<JsonRpcRes> => {
-    // garde-fous JSON-RPC de base
     if (!m || m.jsonrpc !== "2.0" || !m.method) {
       return rpcError(m?.id ?? null, -32600, "Invalid Request");
     }
-
     try {
       switch (m.method) {
-        // 1) initialize : annonce capacités serveur
         case "initialize": {
-          // Optionnel: lire m.params (ex: client info)
           const result = {
-            protocolVersion: "2024-11-05", // valeur indicative
+            protocolVersion: "2024-11-05",
             serverInfo: { name: "Romeo MCP Server", version: "0.1.0" },
-            capabilities: {
-              tools: { list: true, call: true },
-            },
+            capabilities: { tools: { list: true, call: true } },
           };
           return rpcResult(m.id ?? null, result);
         }
-
-        // 2) tools/list : on l’implémente à l’étape suivante
         case "tools/list": {
           return rpcResult(m.id ?? null, { tools: TOOLS_LIST });
         }
-
-        // 3) tools/call : on branchera send_message ensuite
         case "tools/call": {
-          // attendu: { name: string, arguments: any }
           const { name, arguments: args } = m.params ?? {};
           if (name !== "send_message") {
             return rpcError(m.id ?? null, -32601, `Unknown tool: ${name}`);
           }
           try {
-            // appelle ta logique existante
-            const result = await sendMessageTool(args); // importe depuis ./mcp/tools
-            // renvoie un résultat JSON clair
+            const result = await sendMessageTool(args);
             return rpcResult(m.id ?? null, { ok: true, result });
           } catch (e: any) {
             return rpcError(m.id ?? null, -32000, "Tool execution failed", {
@@ -167,7 +147,6 @@ app.get("/mcp/tools", (_req, res) => {
             });
           }
         }
-
         default:
           return rpcError(
             m.id ?? null,
@@ -182,18 +161,29 @@ app.get("/mcp/tools", (_req, res) => {
     }
   };
 
-  const isBatch = Array.isArray(body);
-  const responses = isBatch
-    ? await Promise.all(body.map(handle))
-    : await handle(body);
-  res.setHeader("Content-Type", "application/json");
-  res.status(200).json(responses);
+  try {
+    const isBatch = Array.isArray(body);
+    const responses = isBatch
+      ? await Promise.all(body.map(handle))
+      : await handle(body);
+    res.setHeader("Content-Type", "application/json");
+    res.status(200).json(responses);
+  } catch (e: any) {
+    res
+      .status(200)
+      .json(
+        rpcError((body as any)?.id ?? null, -32000, "Unhandled server error", {
+          message: e?.message,
+        })
+      );
+  }
 });
 
-app.get(["/favicon.ico", "/favicon.png", "/favicon.svg"], (_req, res) => {
-  res.status(204).end(); // No Content
-});*/
+// --- Favicon : éviter les 404 bruitées ---
+app.get(["/favicon.ico", "/favicon.png", "/favicon.svg"], (_req, res) =>
+  res.status(204).end()
+);
 
+// --- Listen ---
 const PORT = Number(process.env.PORT) || 3000;
 app.listen(PORT, () => logger.info(`MCP server listening on :${PORT}`));
-
